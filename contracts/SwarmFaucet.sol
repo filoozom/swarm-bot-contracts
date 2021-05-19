@@ -17,7 +17,9 @@ contract SwarmFaucet is Initializable, AccessControlUpgradeable {
 
     mapping(address => bool) funded;
 
-    event Funded(address addr);
+    event Funded(address addr, FundState state);
+
+    enum FundState {SUCCESS, FAILURE, ALREADY_FUNDED}
 
     function initialize(
         IERC20 __token,
@@ -76,24 +78,23 @@ contract SwarmFaucet is Initializable, AccessControlUpgradeable {
     function fund(address payable[] memory addresses)
         public
         onlyRole(FUNDER_ROLE)
-        returns (bool[] memory successes)
     {
-        successes = new bool[](addresses.length);
         for (uint256 i = 0; i < addresses.length; i++) {
+            FundState state = FundState.SUCCESS;
+
             if (funded[addresses[i]]) {
-                successes[i] = false;
-                continue;
+                state = FundState.ALREADY_FUNDED;
+            } else if (
+                !addresses[i].send(_ethAmount) ||
+                !_token.transfer(addresses[i], _bzzAmount)
+            ) {
+                state = FundState.FAILURE;
+            } else {
+                funded[addresses[i]] = true;
             }
 
-            funded[addresses[i]] = true;
-            successes[i] = true;
-            emit Funded(addresses[i]);
-
-            addresses[i].transfer(_ethAmount);
-            bool success = _token.transfer(addresses[i], _bzzAmount);
-            require(success, "token transfer failed");
+            emit Funded(addresses[i], state);
         }
-        return successes;
     }
 
     function resetFunded(address user) public onlyRole(FUNDER_ROLE) {
